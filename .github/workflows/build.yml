@@ -1,50 +1,68 @@
 name: Build APK
+
 on:
   push:
+    branches: [main, master]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-      - run: mkdir -p www && cp index.html www/
-      - run: npm install
-      - run: npx cap add android
-      - name: Add storage permissions
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prepare web files
         run: |
-          sed -i 's#<application#<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <application android:requestLegacyExternalStorage="true"#' android/app/src/main/AndroidManifest.xml
-      - name: Use legacy storage mode (like Psych Engine)
-        run: sed -i 's/targetSdkVersion = [0-9]*/targetSdkVersion = 29/' android/variables.gradle
+          mkdir -p www
+          cp index.html www/index.html
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Add folder picker plugin
+        run: |
+          D=android/app/src/main/java/com/pestage/editor
+          mkdir -p $D
+          cp FolderPickerPlugin.java MainActivity.java $D/
+
       - name: Set app icon
         run: |
-          pip install pillow --break-system-packages || pip install pillow
-          python3 - <<'PY'
-          import os
-          from PIL import Image
-          if not os.path.exists('icon.png'):
-              print('icon.png not found, skipping icon')
-              raise SystemExit(0)
-          im = Image.open('icon.png').convert('RGBA')
-          R = 'android/app/src/main/res'
-          sizes = {'mdpi': (48, 108), 'hdpi': (72, 162), 'xhdpi': (96, 216), 'xxhdpi': (144, 324), 'xxxhdpi': (192, 432)}
-          for d, (l, f) in sizes.items():
-              p = R + '/mipmap-' + d
-              os.makedirs(p, exist_ok=True)
-              im.resize((l, l), Image.LANCZOS).save(p + '/ic_launcher.png')
-              im.resize((l, l), Image.LANCZOS).save(p + '/ic_launcher_round.png')
-              im.resize((f, f), Image.LANCZOS).save(p + '/ic_launcher_foreground.png')
-          print('icon done')
-          PY
-      - run: npx cap sync android
-      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+          sudo apt-get update -y
+          sudo apt-get install -y imagemagick
+          RES=android/app/src/main/res
+          rm -rf $RES/mipmap-anydpi-v26
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            n=${d%%:*}; s=${d##*:}
+            convert icon.png -resize ${s}x${s} $RES/mipmap-$n/ic_launcher.png
+            cp $RES/mipmap-$n/ic_launcher.png $RES/mipmap-$n/ic_launcher_round.png
+          done
+
+      - name: Storage permission (Android 9 and older)
+        run: |
+          sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#&\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />#' android/app/src/main/AndroidManifest.xml
+
+      - name: Sync
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Stage-Editor-APK
+          name: PE-Stage-Editor-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
