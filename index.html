@@ -73,7 +73,7 @@ pre{background:#0b0c10;border-radius:8px;padding:8px;overflow:auto;font-size:11p
   </div>
   <nav id="tabs">
     <button data-tab="objects">Объекты</button><button data-tab="props">Свойства</button>
-    <button data-tab="fx">✨ Эффекты</button><button data-tab="events">События</button><button data-tab="stage">Сцена</button><button data-tab="export">Экспорт</button>
+    <button data-tab="fx">✨ Эффекты</button><button data-tab="events">События</button><button data-tab="stage">Сцена</button><button data-tab="import">🔄 Импорт</button><button data-tab="export">Экспорт</button>
   </nav>
   <section id="panel"></section>
 </div>
@@ -82,6 +82,8 @@ pre{background:#0b0c10;border-radius:8px;padding:8px;overflow:auto;font-size:11p
 <input type="file" id="fSnd" accept="audio/*,.ogg" multiple hidden>
 <input type="file" id="fProj" hidden>
 <input type="file" id="fLib" hidden>
+<input type="file" id="fCv" accept=".json,.xml,text/xml,application/json,text/plain" hidden>
+<input type="file" id="fCvImg" accept="image/*,.xml,text/xml" multiple hidden>
 <datalist id="dlSnd"></datalist>
 
 <script>
@@ -130,8 +132,8 @@ let saveT=0;function saveSoon(){clearTimeout(saveT);saveT=setTimeout(()=>{dbSet(
 const IMG={};
 function prepImage(name){return new Promise(res=>{const d=P.images[name];if(!d)return res();const el=new Image();el.onload=()=>{const c=IMG[name]={el,frames:{},prefixes:[],list:[]};d.w=el.naturalWidth;d.h=el.naturalHeight;if(d.xml){try{parseXml(d.xml,c);}catch(e){}}invalidate();res();};el.onerror=()=>res();el.src=d.data;});}
 function parseXml(txt,c){const doc=new DOMParser().parseFromString(txt,'text/xml');c.list=[...doc.getElementsByTagName('SubTexture')].map(s=>{const g=k=>parseFloat(s.getAttribute(k));return{n:s.getAttribute('name'),x:g('x'),y:g('y'),w:g('width'),h:g('height'),fx:g('frameX')||0,fy:g('frameY')||0,fw:g('frameWidth')||g('width'),fh:g('frameHeight')||g('height')};});const set=new Set();c.list.forEach(f=>set.add(f.n.replace(/\d{4}$/,'')));c.prefixes=[...set];}
-function framesFor(img,prefix){const c=IMG[img];if(!c)return[];if(!c.frames[prefix])c.frames[prefix]=c.list.filter(f=>f.n.startsWith(prefix)).sort((a,b)=>a.n<b.n?-1:1);return c.frames[prefix];}
-function dim(o){if(o.type==='rect')return{w:o.w,h:o.h};const d=P.images[o.image];if(!d)return{w:100,h:100};if(o.animated&&o.anims.length){const da=o.anims.find(a=>a.name===o.defAnim)||o.anims[0];const f=framesFor(o.image,da.prefix)[0];if(f)return{w:f.fw,h:f.fh};}return{w:d.w||100,h:d.h||100};}
+function framesFor(img,prefix,idx){const c=IMG[img];if(!c)return[];if(!c.frames[prefix])c.frames[prefix]=c.list.filter(f=>f.n.startsWith(prefix)).sort((a,b)=>a.n<b.n?-1:1);const fr=c.frames[prefix];return idx&&typeof idxFrames==='function'?idxFrames(fr,idx):fr;}
+function dim(o){if(o.type==='rect')return{w:o.w,h:o.h};const d=P.images[o.image];if(!d)return{w:100,h:100};if(o.animated&&o.anims.length){const da=o.anims.find(a=>a.name===o.defAnim)||o.anims[0];const f=framesFor(o.image,da.prefix,da.idx)[0];if(f)return{w:f.fw,h:f.fh};}return{w:d.w||100,h:d.h||100};}
 const cleanName=n=>n.replace(/[^\w.\-]+/g,'_');
 const readFile=(f,as)=>new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r[as==='text'?'readAsText':'readAsDataURL'](f);});
 async function importImages(files){
@@ -235,7 +237,7 @@ function drawObj1(o,ox,oy,gal){
   ctx.imageSmoothingEnabled=!!o.aa;
   if(o.type==='rect'){ctx.fillStyle='#'+String(o.color).replace('#','');ctx.fillRect(0,0,w,h);}
   else{const c=IMG[o.image];if(c&&c.el.complete){
-    if(o.animated&&o.anims.length&&c.list.length){const r=RT[o.id]||{};const an=o.anims.find(a=>a.name===(r.animName||o.defAnim))||o.anims[0];const fr=framesFor(o.image,an.prefix);
+    if(o.animated&&o.anims.length&&c.list.length){const r=RT[o.id]||{};const an=o.anims.find(a=>a.name===(r.animName||o.defAnim))||o.anims[0];const fr=framesFor(o.image,an.prefix,an.idx);
       if(fr.length){const tt=(playing||liveAnim||r.animT0!==undefined||String(o.id)===String(SEL))?simT-(r.animT0||0):0;let i=Math.floor(tt*an.fps);i=an.loop?i%fr.length:Math.min(i,fr.length-1);const f=fr[Math.max(0,i)];
         ctx.drawImage(c.el,f.x,f.y,f.w,f.h,-f.fx*o.sx-(an.ox||0),-f.fy*o.sy-(an.oy||0),f.w*o.sx,f.h*o.sy);}}
     else ctx.drawImage(c.el,0,0,w,h);
@@ -309,6 +311,8 @@ const rng=(t,p,v,mi,ma,st,l)=>`<label class="f"><span>${l}: <b>${R(v)}</b></span
 const objOpts=()=>[['','— выбрать объект —'],...P.objects.map(o=>[o.id,o.tag])];
 
 function resolve(t){
+  if(t==='cv')return CV;
+  if(t.startsWith('acl:'))return ACTLIB.find(x=>String(x.id)===t.slice(4));
   if(t==='obj')return selObj();if(t==='stage')return P.stage;if(t==='proj')return P;
   if(t.startsWith('ev:'))return evById(t.slice(3));
   if(t.startsWith('lua:'))return P.lua.find(l=>String(l.id)===t.slice(4));
@@ -327,7 +331,7 @@ function applyInput(e,done){
   if(el.dataset.t==='obj'&&uni&&(el.dataset.p==='sx'||el.dataset.p==='sy')){const other=el.dataset.p==='sx'?'sy':'sx';o[other]=v;const oi=document.querySelector('#panel [data-t="obj"][data-p="'+other+'"]');if(oi)oi.value=v;}
   if(el.dataset.p==='tag'&&done){o.tag=uniqTagExcept(o,v);el.value=o.tag;}
   invalidate();
-  if(done){commit();if(el.dataset.r)renderPanel();}
+  if(done){if(String(el.dataset.t).startsWith('acl:'))saveActLib();commit();if(el.dataset.r)renderPanel();}
 }
 function uniqTagExcept(o,b){b=(b||'obj').replace(/[^A-Za-z0-9_]/g,'_')||'obj';let t=b,k=2;while(P.objects.some(x=>x!==o&&x.tag===t))t=b+'_'+(k++);return t;}
 $('#panel').addEventListener('input',e=>applyInput(e,false));
@@ -335,7 +339,7 @@ $('#panel').addEventListener('change',e=>applyInput(e,true));
 
 /* ================= вкладки ================= */
 function setTab(t){if(t)tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));renderPanel();}
-function renderPanel(){const p=$('#panel');const st=p.scrollTop;p.innerHTML=({objects:tabObjects,props:tabProps,fx:tabFx,events:tabEvents,stage:tabStage,export:tabExport}[tab])();p.scrollTop=st;
+function renderPanel(){const p=$('#panel');const st=p.scrollTop;p.innerHTML=({objects:tabObjects,props:tabProps,fx:tabFx,events:tabEvents,stage:tabStage,import:tabImport,export:tabExport}[tab])();p.scrollTop=st;
   $('#dlSnd').innerHTML=Object.keys(P.sounds).concat(['thunder_1','thunder_2','train_passes']).map(s=>`<option value="${esc(s)}">`).join('');}
 
 function tabObjects(){
@@ -459,6 +463,7 @@ function tabEvents(){
   Object.keys(P.sounds).forEach(s=>{h+=`<div class="item"><span>${esc(s)}</span><span class="sp"></span><button data-a="playSnd" data-k="${esc(s)}">▶</button><button class="bad" data-a="delSnd" data-k="${esc(s)}">✕</button></div>`;});
   h+=`</div>`;
   P.events.forEach(e=>{h+=evCard(e);});
+  h+=aclSection();
   return h;
 }
 function evCard(e){
@@ -469,7 +474,7 @@ function evCard(e){
   else h+=`<div class="two">${num(T,'trig.n',t.n,'N')}${num(T,'trig.off',t.off,'Смещение')}</div>${num(T,'trig.chance',t.chance,'Шанс срабатывания, %')}`;
   e.actions.forEach((a,i)=>{h+=actCard(e,a,i);});
   h+=`<div class="row"><select id="na${e.id}" style="background:#0f1016;color:var(--tx);border:1px solid #333851;border-radius:7px;padding:8px;font:inherit">
-    <option value="flash">Вспышка</option><option value="shake">Тряска камеры</option><option value="sound">Звук</option><option value="anim">Анимация</option><option value="set">Установить значение</option><option value="tween">Плавное изменение</option><option value="run">Пролёт объекта</option><option value="lua">Lua-код</option></select>
+    <option value="flash">Вспышка</option><option value="shake">Тряска камеры</option><option value="sound">Звук</option><option value="anim">Анимация</option><option value="set">Установить значение</option><option value="tween">Плавное изменение</option><option value="run">Пролёт объекта</option><option value="lua">Lua-код</option>${ACTLIB.map(x=>`<option value="acl:${x.id}">★ ${esc(x.name)}</option>`).join('')}</select>
     <button class="pri" data-a="addAct" data-id="${e.id}">＋ Действие</button></div></div>`;
   return h;
 }
@@ -484,7 +489,7 @@ function actCard(e,a,i){
   if(a.type==='set'){f=`${selF(T,'target',a.target,objOpts(),'Объект',1)}${selF(T,'prop',a.prop,[...props,['visible','видим (1/0)']],'Свойство')}${num(T,'value',a.value,'Значение',.1)}`;}
   if(a.type==='tween'){f=`${selF(T,'target',a.target,objOpts(),'Объект',1)}${selF(T,'prop',a.prop,props,'Свойство')}${num(T,'value',a.value,'Конечное значение',.1)}<div class="two">${num(T,'dur',a.dur,'Длительность, сек',.1)}${selF(T,'ease',a.ease,EASE_NAMES,'Easing')}</div>`;}
   if(a.type==='run'){f=`${selF(T,'target',a.target,objOpts(),'Объект',1)}<div class="two">${num(T,'x1',a.x1,'Старт X')}${num(T,'y1',a.y1,'Старт Y')}</div><div class="two">${num(T,'x2',a.x2,'Финиш X')}${num(T,'y2',a.y2,'Финиш Y')}</div>${num(T,'dur',a.dur,'Длительность, сек',.1)}${chk(T,'hide',a.hide,'Скрыть в конце')}`;}
-  if(a.type==='lua')f=`${selF(T,'target',a.target,objOpts(),'Объект для {obj} (необязательно)',1)}<label class="f"><span>Lua-код (внутри функции события; {obj} = имя объекта)</span><textarea ${LUATA} ${attr(T,'code')}>${esc(a.code)}</textarea></label>`;
+  if(a.type==='lua')f=`${a.name?`<div class="hint">★ ${esc(a.name)}</div>`:''}${selF(T,'target',a.target,objOpts(),'Объект для {obj} (необязательно)',1)}${paramRows(T,a.params,'actParamDel',`data-id="${e.id}" data-ai="${i}"`)}<div class="row"><button data-a="actParamAdd" data-id="${e.id}" data-ai="${i}">＋ параметр</button><button data-a="aclFromAct" data-id="${e.id}" data-ai="${i}">★ Сохранить как моё действие</button></div><label class="f"><span>Lua-код (внутри функции события; {obj} = объект, {параметры})</span><textarea ${LUATA} ${attr(T,'code')}>${esc(a.code)}</textarea></label>`;
   return`<div class="act"><div class="row"><b>${names[a.type]}</b><span class="sp"></span><button class="bad" data-a="delAct" data-id="${e.id}" data-i="${i}">✕</button></div>${num(T,'delay',a.delay,'Задержка, сек',.1)}${f}</div>`;
 }
 function tabStage(){const T='stage',S=P.stage;
@@ -545,7 +550,7 @@ const ACT={
   addEv(){P.events.push(newEvent());commit();renderPanel();},
   delEv(d){if(!confirm('Удалить событие?'))return;P.events=P.events.filter(e=>String(e.id)!==d.id);commit();renderPanel();},
   testEv(d){const e=evById(d.id);if(e){runEvent(e);toast('Тест: '+e.name+' (⟲ — сброс)');}},
-  addAct(d){const e=evById(d.id),s=document.getElementById('na'+d.id);e.actions.push(newAct(s.value));commit();renderPanel();},
+  addAct(d){const e=evById(d.id),s=document.getElementById('na'+d.id);if(s.value.startsWith('acl:')){const x=ACTLIB.find(y=>String(y.id)===s.value.slice(4));if(!x)return;e.actions.push(newAct('lua',{name:x.name,params:jc(x.params),code:x.code}));}else e.actions.push(newAct(s.value));commit();renderPanel();},
   delAct(d){const e=evById(d.id);e.actions.splice(+d.i,1);commit();renderPanel();},
   playSnd(d){playSnd(d.k,1);},
   delSnd(d){delete P.sounds[d.k];saveSoon();renderPanel();},
@@ -704,7 +709,7 @@ function actLines(a,id,tg,twc){
   if(need&&!o)return null;
   const prop={x:'X',y:'Y',alpha:'Alpha',angle:'Angle'};
   switch(a.type){
-    case'lua':{const c=subst(a.code,o?tg[o.id]:null,id,[]);if(!c.trim())return null;return['do',...c.split('\n').map(l=>'\t'+l.replace(/\s+$/,'')),'end'];}
+    case'lua':{const c=subst(a.code,o?tg[o.id]:null,id,a.params||[]);if(!c.trim())return null;return['do',...c.split('\n').map(l=>'\t'+l.replace(/\s+$/,'')),'end'];}
     case'flash':return[`cameraFlash(${q(a.cam)}, ${q(hex(a.color))}, ${N(a.dur)}, true)`];
     case'shake':return[`cameraShake(${q(a.cam)}, ${N(a.intensity)}, ${N(a.dur)})`];
     case'sound':{if(!a.sound)return null;const p=P.sounds[a.sound]?imgPath(a.sound):noExt(a.sound);return[`playSound(${q(p)}, ${N(a.vol)})`];}
@@ -749,7 +754,7 @@ function objCreate(o,tag,x,y){
   if(o.type==='rect')L.push(`\tmakeLuaSprite(${t}, '', ${N(x)}, ${N(y)})`,`\tmakeGraphic(${t}, ${Math.round(o.w)}, ${Math.round(o.h)}, ${q(hex(o.color))})`);
   else if(o.animated&&o.anims.length){
     L.push(`\tmakeAnimatedLuaSprite(${t}, ${q(imgPath(o.image))}, ${N(x)}, ${N(y)})`);
-    o.anims.forEach(a=>{L.push(`\taddAnimationByPrefix(${t}, ${q(a.name)}, ${q(a.prefix)}, ${N(a.fps)}, ${!!a.loop})`);if(a.ox||a.oy)L.push(`\taddOffset(${t}, ${q(a.name)}, ${N(a.ox||0)}, ${N(a.oy||0)})`);});
+    o.anims.forEach(a=>{L.push(a.idx&&idxList(a.idx).length?`\taddAnimationByIndices(${t}, ${q(a.name)}, ${q(a.prefix)}, ${q(idxList(a.idx).join(','))}, ${N(a.fps)}, ${!!a.loop})`:`\taddAnimationByPrefix(${t}, ${q(a.name)}, ${q(a.prefix)}, ${N(a.fps)}, ${!!a.loop})`);if(a.ox||a.oy)L.push(`\taddOffset(${t}, ${q(a.name)}, ${N(a.ox||0)}, ${N(a.oy||0)})`);});
     const da=o.anims.find(a=>a.name===o.defAnim)||o.anims[0];L.push(`\tobjectPlayAnimation(${t}, ${q(da.name)}, true)`);}
   else L.push(`\tmakeLuaSprite(${t}, ${q(imgPath(o.image))}, ${N(x)}, ${N(y)})`);
   if(o.scrollX!==1||o.scrollY!==1)L.push(`\tsetScrollFactor(${t}, ${N(o.scrollX)}, ${N(o.scrollY)})`);
@@ -902,6 +907,7 @@ function collectFiles(base){
   used.forEach(n=>{const d=P.images[n];files.push({path:base+'images/'+sn+'/'+n,data:dataUrlBytes(d.data)});if(d.xml)files.push({path:base+'images/'+sn+'/'+noExt(n)+'.xml',data:enc.encode(d.xml)});});
   const usedSnd=new Set();P.events.forEach(e=>e.actions.forEach(a=>{if(a.type==='sound'&&P.sounds[a.sound])usedSnd.add(a.sound);}));
   usedSnd.forEach(n=>files.push({path:base+'sounds/'+sn+'/'+n,data:dataUrlBytes(P.sounds[n].data)}));
+  ACTLIB.filter(x=>x.chart&&x.code.trim()).forEach(x=>{let nm=String(x.name).replace(/[^A-Za-z0-9_ \-]+/g,'').trim();if(!nm)nm='CustomEvent'+String(x.id).slice(-4);files.push({path:base+'custom_events/'+nm+'.lua',data:enc.encode(chartEventLua(x,nm))},{path:base+'custom_events/'+nm+'.txt',data:enc.encode(chartEventTxt(x))});});
   return files;
 }
 function exportZip(){saveBytes(slug(P.name)+'.zip',makeZip(collectFiles('mods/'+slug(P.mod)+'/')),'application/zip');}
@@ -925,9 +931,214 @@ function demo(){
     newObj({tag:'cloud',type:'rect',x:-200,y:30,w:300,h:80,color:'8D99AE',alpha:.6,fx:[{type:'move',mode:'scroll',dx:1800,dy:0,period:14,phase:0}]})];
   return d;
 }
+/* ================= свои действия (Lua) для событий ================= */
+let ACTLIB=[];
+async function loadActLib(){try{const s=await dbGet('actlib');ACTLIB=s?JSON.parse(s):[];}catch(e){ACTLIB=[];}}
+function saveActLib(){dbSet('actlib',JSON.stringify(ACTLIB)).catch(()=>{});}
+function idxList(s){const out=[];String(s||'').split(/[,\s]+/).forEach(t=>{if(!t)return;const m=/^(\d+)\.\.(\d+)$/.exec(t);if(m){for(let i=+m[1];i<=+m[2]&&out.length<5000;i++)out.push(i);}else if(/^\d+$/.test(t))out.push(+t);});return out;}
+function idxFrames(fr,s){const r=idxList(s).map(i=>fr[i]).filter(Boolean);return r.length?r:fr;}
+function paramRows(T,params,delAct,extra){return (params||[]).map((p,i)=>`<div class="row"><input class="pin" value="${esc(p.k)}" placeholder="имя" ${attr(T,'params.'+i+'.k')}><input class="pin" value="${esc(p.v)}" placeholder="значение" ${attr(T,'params.'+i+'.v')}><button class="bad" data-a="${delAct}" ${extra} data-i="${i}">✕</button></div>`).join('');}
+function aclCard(x){
+  const T='acl:'+x.id,msg=luaBalance(x.code);
+  let h=`<div class="act" id="acl${x.id}"><div class="row"><b>★ ${esc(x.name)}</b><span class="sp"></span><button data-a="aclUse" data-id="${x.id}">▶ В событие</button><button class="bad" data-a="aclDel" data-id="${x.id}">✕</button></div>`;
+  h+=txt(T,'name',x.name,'Название')+`<div class="hint">Параметры подставляются в код как {имя}. При добавлении в событие их значения можно менять.</div>`;
+  h+=paramRows(T,x.params,'aclParamDel',`data-id="${x.id}"`);
+  h+=`<div class="row"><button data-a="aclParamAdd" data-id="${x.id}">＋ параметр</button></div>`;
+  h+=`<label class="f"><span>Lua-код действия. Доступно: {obj}, {id}, {параметры}, curBeat, getProperty и вся Lua-часть Psych</span><textarea ${LUATA} ${attr(T,'code')}>${esc(x.code)}</textarea></label>`;
+  if(msg)h+=`<div class="warn">⚠ ${esc(msg)}</div>`;
+  h+=chk(T,'chart',!!x.chart,'Выгрузить ещё и как событие чарта Psych (custom_events): есть value1 и value2, но нет {obj}; имя файла берётся из латиницы названия');
+  return h+'</div>';
+}
+function aclSection(){
+  let h=`<div class="grp"><h3>★ Мои действия (свой Lua)</h3><div class="hint">Напиши Lua-код один раз и сохрани. Дальше он появляется в «＋ Действие» любого события пунктом «★ название», либо жми «▶ В событие» и получишь готовое событие.</div><div class="row"><button class="pri" data-a="aclNew">＋ Новое действие</button></div>`;
+  ACTLIB.forEach(x=>{h+=aclCard(x);});
+  return h+'</div>';
+}
+function chartEventLua(x,nm){const code=subst(x.code,null,'ce',x.params);
+  return ['-- Событие чарта «'+nm+'»: сгенерировано PE Stage Editor','function onEvent(name, value1, value2)','\tif name == '+q(nm)+' then','\t\tdo',...code.split('\n').map(l=>'\t\t\t'+l.replace(/\s+$/,'')),'\t\tend','\tend','end',''].join('\n');}
+function chartEventTxt(x){const ps=(x.params||[]).map(p=>p.k+' = '+p.v).join(', ');return x.name+'\nValue 1 и Value 2 доступны в коде как value1 и value2.'+(ps?'\nПараметры: '+ps:'')+'\n';}
+function jumpTo(id){const el=document.getElementById(id);if(el){el.scrollIntoView({block:'start'});el.classList.add('hl');}}
+Object.assign(ACT,{
+  aclNew(){const x={id:uid(),name:'Моё действие',params:[],code:'-- твой Lua-код события\n',chart:false};ACTLIB.push(x);saveActLib();renderPanel();jumpTo('acl'+x.id);},
+  aclDel(d){if(!confirm('Удалить своё действие из библиотеки? В уже созданных событиях оно останется.'))return;ACTLIB=ACTLIB.filter(x=>String(x.id)!==d.id);saveActLib();renderPanel();},
+  aclParamAdd(d){const x=ACTLIB.find(y=>String(y.id)===d.id);if(!x)return;x.params.push({k:'p'+(x.params.length+1),v:'1'});saveActLib();renderPanel();},
+  aclParamDel(d){const x=ACTLIB.find(y=>String(y.id)===d.id);if(!x)return;x.params.splice(+d.i,1);saveActLib();renderPanel();},
+  aclUse(d){const x=ACTLIB.find(y=>String(y.id)===d.id);if(!x)return;
+    const e=newEvent({name:x.name,trig:TR({type:'beat',n:4,off:0}),actions:[newAct('lua',{name:x.name,params:jc(x.params),code:x.code})]});
+    P.events.push(e);commit();renderPanel();jumpTo('ev'+e.id);toast('Событие создано: настрой «когда срабатывает»');},
+  aclFromAct(d){const e=evById(d.id),a=e&&e.actions[+d.ai];if(!a)return;const name=prompt('Название своего действия',a.name||'Моё действие');if(!name)return;
+    ACTLIB.push({id:uid(),name,params:jc(a.params||[]),code:a.code||'',chart:false});saveActLib();renderPanel();toast('Сохранено в «Мои действия»');},
+  actParamAdd(d){const e=evById(d.id),a=e&&e.actions[+d.ai];if(!a)return;a.params=a.params||[];a.params.push({k:'p'+(a.params.length+1),v:'1'});commit();renderPanel();},
+  actParamDel(d){const e=evById(d.id),a=e&&e.actions[+d.ai];if(!a||!a.params)return;a.params.splice(+d.i,1);commit();renderPanel();},
+  cvFile(){$('#fCv').value='';$('#fCv').click();},
+  cvImgs(){$('#fCvImg').value='';$('#fCvImg').click();},
+  cvRun(){cvRun();},
+  cvRelink(){cvRelink();}
+});
+
+/* ================= конвертер локаций: V-Slice и Codename → Psych ================= */
+const CV={file:'',text:'',fmt:'',mode:'replace',sizes:{bf:[439,785],dad:[471,785],gf:[703,657]},report:[]};
+const hex6=c=>String(c||'FFFFFF').replace(/^#|^0x/i,'').toUpperCase().padStart(6,'0').slice(-6);
+const baseOf=a=>{const s=String(a||'').replace(/\\/g,'/').split('/').pop();return s.replace(/\.(png|jpe?g|webp|gif)$/i,'');};
+function findImage(base){const b=cleanName(String(base||'')).toLowerCase();return Object.keys(P.images).find(k=>noExt(k).toLowerCase()===b)||'';}
+function cvDetect(text){
+  const t=String(text||'').replace(/^\uFEFF/,'').trim();
+  if(t[0]==='<')return /<stage[\s>]/i.test(t)?'codename':'';
+  try{const j=JSON.parse(t);if(j&&Array.isArray(j.props))return'vslice';if(j&&(j.boyfriend||j.opponent))return'psych';}catch(e){}
+  return'';
+}
+function parseVSlice(j,notes,sizes){
+  const ch=j.characters||{},num=(v,d)=>(typeof v==='number'&&isFinite(v))?v:d;
+  const zs=['bf','dad','gf'].filter(k=>ch[k]).map(k=>num(ch[k].zIndex,0)),maxZ=zs.length?Math.max(...zs):0,minZ=zs.length?Math.min(...zs):0;
+  const items=[];let noScroll=0,between=0,packer=0,multi=0,indices=0;
+  (j.props||[]).map((p,i)=>({p,i})).sort((a,b)=>(num(a.p.zIndex,0)-num(b.p.zIndex,0))||a.i-b.i).forEach(({p})=>{
+    const z=num(p.zIndex,0),asset=String(p.assetPath||''),solid=asset[0]==='#',pos=Array.isArray(p.position)?p.position:[0,0];
+    const sc=Array.isArray(p.scale)?[num(p.scale[0],1),num(p.scale[1],1)]:[num(p.scale,1),num(p.scale,1)];
+    let scr=[0,0];if(Array.isArray(p.scroll))scr=[num(p.scroll[0],0),num(p.scroll[1],0)];else noScroll++;
+    if(z>minZ&&z<=maxZ)between++;
+    const it={solid,name:String(p.name||('prop'+items.length)),asset,base:baseOf(asset),color:solid?hex6(asset):'FFFFFF',x:num(pos[0],0),y:num(pos[1],0),sx:sc[0],sy:sc[1],scrollX:scr[0],scrollY:scr[1],
+      alpha:num(p.alpha,1),angle:num(p.angle,0),flipX:!!p.flipX,aa:!p.isPixel,blend:p.blend,front:z>maxZ,anims:[],start:p.startingAnimation||'',dance:num(p.danceEvery,0),animType:p.animType||'sparrow'};
+    if(it.animType==='packer')packer++;if(it.animType==='multisparrow')multi++;
+    (p.animations||[]).forEach(a=>{const off=Array.isArray(a.offsets)?a.offsets:[0,0],idx=Array.isArray(a.frameIndices)?a.frameIndices.join(','):'';if(idx)indices++;
+      it.anims.push({name:String(a.name||'anim'),prefix:String(a.prefix||''),fps:num(a.frameRate,24),loop:!!a.looped,ox:num(off[0],0),oy:num(off[1],0),idx});});
+    items.push(it);
+  });
+  const chars={},base={bf:[-100,-100],dad:[150,-100],gf:[0,0]};
+  ['bf','dad','gf'].forEach(k=>{const c=ch[k];if(!c)return;const pos=Array.isArray(c.position)?c.position:[0,0],sz=sizes[k]||[400,600],co=Array.isArray(c.cameraOffsets)?c.cameraOffsets:[0,0];
+    chars[k]={x:num(pos[0],0)-sz[0]/2,y:num(pos[1],0)-sz[1],cx:num(co[0],0)-base[k][0],cy:num(co[1],0)-base[k][1]};
+    if(c.scale!=null&&c.scale!==1)notes.push('У персонажа '+k+' масштаб '+c.scale+': в Psych он задаётся в json самого персонажа, здесь не перенесён');});
+  notes.push('Позиции персонажей пересчитаны из позиции «по ногам» в левый верхний угол по размеру кадра (см. поля ниже): проверь и подвинь пальцем на сцене');
+  notes.push('Смещения камеры пересчитаны относительно стандартных у Psych (bf −100,−100; оппонент +150,−100): значения приблизительные');
+  if(noScroll)notes.push('У '+noScroll+' объектов не указан scroll: по документации V-Slice это 0,0 (не двигаются с камерой)');
+  if(between)notes.push(between+' объектов лежат по слоям между персонажами: в Psych они оказались позади всех персонажей');
+  if(packer)notes.push(packer+' объектов с animType packer (.txt атлас): в редакторе поддерживается только Sparrow (.xml), эти объекты станут статичными');
+  if(multi)notes.push(multi+' объектов multisparrow: дополнительные листы анимаций не перенесены');
+  if(indices)notes.push('Индексы кадров (frameIndices) перенесены через addAnimationByIndices');
+  notes.push('Смещения анимаций (offsets) скопированы как есть: если анимация «прыгает», поменяй знак в Offset X/Y');
+  return{name:String(j.name||'vslice_stage'),zoom:num(j.cameraZoom,1),chars,items,fmt:'vslice'};
+}
+function parseCodename(txt,notes){
+  const doc=new DOMParser().parseFromString(String(txt).replace(/^\uFEFF/,''),'text/xml');
+  if(doc.getElementsByTagName('parsererror').length)throw new Error('некорректный XML');
+  const root=doc.documentElement;if(!root||root.tagName.toLowerCase()!=='stage')throw new Error('нет корневого <stage>');
+  const M=el=>{const m={};[...el.attributes].forEach(a=>{m[a.name.toLowerCase()]=a.value;});return m;};
+  const F=(m,n,d)=>{const v=parseFloat(m[n]);return isNaN(v)?d:v;},S=(m,n,d)=>(m[n]==null||m[n]==='')?d:m[n],B=(m,n,d)=>m[n]==null?d:/^(true|1|yes)$/i.test(m[n]);
+  const slotOf={boyfriend:'bf',bf:'bf',player:'bf',girlfriend:'gf',gf:'gf',dad:'dad',opponent:'dad'};
+  const isChar=t=>!!slotOf[t]||t==='character'||t==='char';
+  const rm=M(root),folder=String(S(rm,'folder','')).replace(/\\/g,'/'),kids=[...root.children];
+  let last=-1;kids.forEach((el,i)=>{if(isChar(el.tagName.toLowerCase()))last=i;});
+  const chars={},items=[],skipped=new Set(),cnt={zf:0,skew:0,tint:0,gsz:0,ext:0,between:0};
+  kids.forEach((el,i)=>{
+    const t=el.tagName.toLowerCase(),m=M(el);
+    if(isChar(t)){const s=slotOf[t]||slotOf[String(m.name||'').toLowerCase()];
+      if(!s){notes.push('Персонаж «'+(m.name||t)+'» не привязан к bf/dad/gf: пропущен');return;}
+      chars[s]={x:F(m,'x',0),y:F(m,'y',0),cx:F(m,'camxoffset',0),cy:F(m,'camyoffset',0)};return;}
+    if(t==='solid'||t==='box'){items.push({solid:true,name:S(m,'name','box'+i),color:hex6(S(m,'color','#FFFFFF')),x:F(m,'x',0),y:F(m,'y',0),sx:F(m,'width',100),sy:F(m,'height',100),scrollX:1,scrollY:1,alpha:1,angle:0,aa:true,front:i>last,anims:[]});if(i<last&&i>0)cnt.between+=0;return;}
+    if(t==='sprite'||t==='spr'||t==='sparrow'){
+      const sp=String(S(m,'sprite','')).replace(/\\/g,'/'),sc=F(m,'scale',1),sr=F(m,'scroll',1);
+      const it={solid:false,name:S(m,'name',baseOf(sp)||('sprite'+i)),asset:folder+sp,base:baseOf(sp),x:F(m,'x',0),y:F(m,'y',0),sx:F(m,'scalex',sc),sy:F(m,'scaley',sc),scrollX:F(m,'scrollx',sr),scrollY:F(m,'scrolly',sr),
+        alpha:F(m,'alpha',1),angle:0,flipX:false,aa:B(m,'antialiasing',true),front:i>last,anims:[],autoAnim:false,dance:0,danceAnim:''};
+      if(F(m,'zoomfactor',1)!==1)cnt.zf++;if(m.skewx||m.skewy)cnt.skew++;if(m.graphicsize||m.graphicsizex||m.graphicsizey)cnt.gsz++;
+      if(m.color&&hex6(m.color)!=='FFFFFF')cnt.tint++;
+      [...el.children].filter(c=>/^anim$/i.test(c.tagName)).forEach(c=>{const am=M(c),type=String(am.type||'').toLowerCase();
+        const an={name:S(am,'name',S(am,'anim','anim')),prefix:S(am,'anim',''),fps:F(am,'fps',24),loop:B(am,'loop',type==='loop'),ox:F(am,'x',0),oy:F(am,'y',0),idx:idxList(S(am,'indices','')).join(',')};
+        it.anims.push(an);if(type==='beat'&&!it.danceAnim){it.danceAnim=an.name;it.dance=Math.max(1,F(m,'beatinterval',1));}});
+      it.autoAnim=!it.anims.length;
+      items.push(it);return;}
+    if(t==='use-extension'||t==='extension'||t==='ext'){cnt.ext++;return;}
+    skipped.add(t);
+  });
+  if(cnt.zf)notes.push(cnt.zf+' спрайтов с zoomFactor ≠ 1: в Psych такого параметра нет, пропущено');
+  if(cnt.skew)notes.push(cnt.skew+' спрайтов с skew: не поддерживается, пропущено');
+  if(cnt.gsz)notes.push(cnt.gsz+' спрайтов с graphicSize: не перенесено, используй масштаб');
+  if(cnt.tint)notes.push(cnt.tint+' спрайтов с цветовым оттенком (color): не поддерживается, пропущено');
+  if(cnt.ext)notes.push('Скрипты расширения (<ext>/<use-extension>) не конвертируются: перенеси их логику вручную как Lua-эффект или действие');
+  if(skipped.size)notes.push('Пропущенные теги: '+[...skipped].join(', '));
+  notes.push('Порядок слоёв: спрайты после тегов персонажей считаются «спереди», до них «позади»; спрайты между персонажами оказались позади');
+  notes.push('Позиции персонажей и смещения камеры скопированы как есть (в Codename они устроены похоже на Psych): проверь на сцене');
+  return{name:S(rm,'name','codename_stage'),zoom:F(rm,'zoom',1),chars,items,fmt:'codename'};
+}
+function cvBuild(norm,append,notes,missing){
+  const used=new Set(append?P.objects.map(o=>o.tag):[]),objs=[],evs=[],BL={add:'add',additive:'add',multiply:'multiply',screen:'screen'};
+  const uniq=b=>{b=String(b||'obj').replace(/[^A-Za-z0-9_]/g,'_')||'obj';if(/^\d/.test(b))b='o'+b;let t=b,k=2;while(used.has(t))t=b+'_'+(k++);used.add(t);return t;};
+  let matched=0;
+  norm.items.forEach(it=>{
+    const o=newObj({tag:uniq(it.name),type:it.solid?'rect':'image',x:R(it.x,2),y:R(it.y,2),sx:it.solid?1:it.sx,sy:it.solid?1:it.sy,scrollX:it.scrollX,scrollY:it.scrollY,alpha:it.alpha,angle:it.angle,flipX:!!it.flipX,aa:it.aa!==false,front:!!it.front,blend:BL[String(it.blend||'').toLowerCase()]||'normal'});
+    if(it.solid){o.color=it.color;o.w=Math.max(1,Math.round(it.sx));o.h=Math.max(1,Math.round(it.sy));}
+    else{
+      o.srcAsset=it.base;const k=findImage(it.base);if(k){o.image=k;matched++;}else if(it.base)missing.add(it.base);
+      const ci=o.image&&IMG[o.image];
+      if(it.anims.length&&it.animType!=='packer'){o.animated=true;o.anims=it.anims.map(a=>Object.assign({ox:0,oy:0,idx:''},a));if(it.start&&o.anims.some(a=>a.name===it.start))o.defAnim=it.start;}
+      else if(it.autoAnim&&ci&&ci.prefixes.length){o.animated=true;o.anims=ci.prefixes.slice(0,40).map(mkAnim);}
+      else if(it.autoAnim)o.autoAnim=true;
+    }
+    objs.push(o);
+    if(o.animated&&o.anims.length&&it.dance>0){
+      const names=o.anims.map(a=>a.name),n=Math.max(1,Math.round(it.dance));
+      if(it.dance<1)notes.push('У «'+o.tag+'» анимация чаще, чем раз в бит: сделано раз в бит');
+      const mk=(nm,nn,off,an)=>newEvent({name:nm,trig:TR({type:'beat',n:nn,off}),actions:[newAct('anim',{target:o.id,anim:an})]});
+      if(names.includes('danceLeft')&&names.includes('danceRight')){evs.push(mk('Танец: '+o.tag+' (L)',2*n,0,'danceLeft'),mk('Танец: '+o.tag+' (R)',2*n,n,'danceRight'));}
+      else{const an=it.danceAnim&&names.includes(it.danceAnim)?it.danceAnim:(names.includes('idle')?'idle':(it.start&&names.includes(it.start)?it.start:names[0]));evs.push(mk('Танец: '+o.tag,n,0,an));}
+    }
+  });
+  return{objs,evs,matched};
+}
+function cvRun(){
+  if(!CV.text)return toast('Сначала выбери файл локации');
+  const notes=[],missing=new Set();let norm;
+  try{
+    if(CV.fmt==='vslice')norm=parseVSlice(JSON.parse(CV.text.replace(/^\uFEFF/,'')),notes,CV.sizes);
+    else if(CV.fmt==='codename')norm=parseCodename(CV.text,notes);
+    else return toast('Формат не распознан');
+  }catch(e){return toast('Ошибка разбора: '+e.message);}
+  const append=CV.mode==='append';
+  if(!append&&(P.objects.length||P.events.length)&&!confirm('Заменить текущую сцену результатом конвертации?'))return;
+  const r=cvBuild(norm,append,notes,missing);
+  if(append){r.objs.forEach(o=>P.objects.push(o));r.evs.forEach(e=>P.events.push(e));}
+  else{
+    P.objects=r.objs;P.events=r.evs;P.lua=[];
+    const S=P.stage;S.zoom=norm.zoom||1;S.hideGF=!norm.chars.gf;
+    const cm={bf:'camBF',dad:'camDad',gf:'camGF'};
+    ['bf','dad','gf'].forEach(k=>{const c=norm.chars[k];if(!c)return;S[k]=[R(c.x,1),R(c.y,1)];S[cm[k]]=[R(c.cx,1),R(c.cy,1)];});
+    if(norm.name)P.name=slug(norm.name);
+  }
+  SEL=null;commit();resetSim();fit();
+  const rep=['Готово: '+r.objs.length+' объектов, '+r.evs.length+' событий анимации ('+({vslice:'V-Slice',codename:'Codename'}[norm.fmt])+' → Psych 0.7.3). Картинок привязано: '+r.matched+'.'];
+  if(missing.size)rep.push('⚠ Нет картинок: '+[...missing].join(', ')+'. Добавь их кнопкой «Картинки и атласы» (PNG + XML), они привяжутся сами.');
+  notes.forEach(n=>rep.push('⚠ '+n));
+  CV.report=rep;renderPanel();toast('Конвертация завершена');
+}
+async function loadAssets(files){
+  const list=[...files],xmls=list.filter(f=>/\.xml$/i.test(f.name)),imgs=list.filter(f=>/\.(png|jpe?g|webp|gif)$/i.test(f.name));let n=0;
+  for(const f of imgs){const name=cleanName(f.name),data=await readFile(f);P.images[name]={data,w:0,h:0,xml:(P.images[name]||{}).xml||null};
+    const x=xmls.find(z=>noExt(cleanName(z.name))===noExt(name));if(x)P.images[name].xml=await readFile(x,'text');await prepImage(name);n++;}
+  for(const x of xmls){const b=noExt(cleanName(x.name)),k=Object.keys(P.images).find(i=>noExt(i)===b);
+    if(k&&!imgs.some(f=>noExt(cleanName(f.name))===b)){P.images[k].xml=await readFile(x,'text');await prepImage(k);}}
+  return n;
+}
+function cvRelink(){
+  let n=0;
+  P.objects.forEach(o=>{if(o.type!=='image'||o.image||!o.srcAsset)return;const k=findImage(o.srcAsset);if(!k)return;o.image=k;n++;
+    const ci=IMG[k];if(o.autoAnim&&ci&&ci.prefixes.length&&!o.anims.length){o.animated=true;o.anims=ci.prefixes.slice(0,40).map(mkAnim);delete o.autoAnim;}});
+  commit();invalidate();CV.report=(CV.report||[]).concat(['Привязано картинок: '+n]);renderPanel();toast('Привязано картинок: '+n);
+}
+function tabImport(){
+  const T='cv',fn={vslice:'V-Slice (JSON)',codename:'Codename Engine (XML)',psych:'Psych Engine (уже готов, конвертация не нужна)'};
+  let h=`<div class="grp"><h3>🔄 Конвертер локаций → Psych Engine</h3><div class="hint">Поддерживается: V-Slice (stage .json) и Codename Engine (stage .xml). Картинки и XML-атласы можно добавить до или после конвертации: они привязываются по имени файла.</div>
+  <div class="row"><button class="pri" data-a="cvFile">📂 Файл локации</button><button data-a="cvImgs">🖼 Картинки и атласы</button></div>`;
+  h+=CV.file?`<div class="hint">Файл: <b>${esc(CV.file)}</b> · формат: <b>${CV.fmt?fn[CV.fmt]:'не распознан'}</b> · картинок в проекте: ${Object.keys(P.images).length}</div>`:`<div class="hint">Файл не выбран.</div>`;
+  h+=selF(T,'mode',CV.mode,[['replace','заменить текущую сцену'],['append','добавить к текущей сцене']],'Как применить');
+  if(CV.fmt==='vslice')h+=`<div class="hint">V-Slice ставит персонажей по «ногам», Psych по левому верхнему углу. Для пересчёта нужен размер кадра персонажа (по умолчанию как у стандартной сцены).</div>`+['bf','dad','gf'].map(k=>`<div class="two">${num(T,'sizes.'+k+'.0',CV.sizes[k][0],CH[k].n+': ширина кадра')}${num(T,'sizes.'+k+'.1',CV.sizes[k][1],CH[k].n+': высота кадра')}</div>`).join('');
+  h+=`<div class="row"><button class="pri" data-a="cvRun" ${CV.fmt==='vslice'||CV.fmt==='codename'?'':'disabled'}>Конвертировать</button><button data-a="cvRelink">🔗 Привязать картинки</button></div></div>`;
+  if(CV.report&&CV.report.length)h+=`<div class="grp"><h3>Отчёт</h3>${CV.report.map(x=>`<div class="${x[0]==='⚠'?'warn':'hint'}">${esc(x)}</div>`).join('')}</div>`;
+  return h;
+}
+$('#fCv').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;const t=await readFile(f,'text');CV.file=f.name;CV.text=t;CV.fmt=cvDetect(t);CV.report=[];renderPanel();toast(CV.fmt?'Формат распознан':'Формат не распознан');});
+$('#fCvImg').addEventListener('change',async e=>{if(!e.target.files.length)return;const n=await loadAssets(e.target.files);toast('Картинок добавлено: '+n);cvRelink();});
+
 (async function init(){
   let d=null;try{const s=await dbGet('proj');if(s)d=JSON.parse(s);}catch(e){}
-  await loadLib();await loadTarget();
+  await loadLib();await loadActLib();await loadTarget();
   await loadProject(d||demo());
   resize();fit();requestAnimationFrame(loop);
 })();
