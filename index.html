@@ -244,7 +244,8 @@ function drawObj1(o,ox,oy,gal){
   }else{ctx.fillStyle='#444';ctx.fillRect(0,0,w,h);}}
   ctx.restore();
 }
-function drawChar(k){const c=CH[k],p=P.stage[k];ctx.save();ctx.globalAlpha=.5;ctx.fillStyle=c.c;ctx.fillRect(p[0],p[1],c.s[0],c.s[1]);ctx.globalAlpha=1;ctx.strokeStyle=SEL===k?'#ffd34d':c.c;ctx.lineWidth=(SEL===k?3:1.5)/V.z;ctx.strokeRect(p[0],p[1],c.s[0],c.s[1]);ctx.fillStyle='#fff';ctx.font=(18/V.z)+'px sans-serif';ctx.fillText(c.n,p[0]+8/V.z,p[1]+24/V.z);ctx.restore();}
+const chS=k=>(P.stage.cs&&P.stage.cs[k]&&P.stage.cs[k][0]>0&&P.stage.cs[k][1]>0)?P.stage.cs[k]:CH[k].s;
+function drawChar(k){const c=Object.assign({},CH[k],{s:chS(k)}),p=P.stage[k];ctx.save();ctx.globalAlpha=.5;ctx.fillStyle=c.c;ctx.fillRect(p[0],p[1],c.s[0],c.s[1]);ctx.globalAlpha=1;ctx.strokeStyle=SEL===k?'#ffd34d':c.c;ctx.lineWidth=(SEL===k?3:1.5)/V.z;ctx.strokeRect(p[0],p[1],c.s[0],c.s[1]);ctx.fillStyle='#fff';ctx.font=(18/V.z)+'px sans-serif';ctx.fillText(c.n,p[0]+8/V.z,p[1]+24/V.z);ctx.restore();}
 function draw(){
   ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#0d0e13';ctx.fillRect(0,0,cv.width,cv.height);
   let sx=0,sy=0;if(fx.shake&&simT<fx.shake.until){sx=(Math.random()*2-1)*fx.shake.i*1280*V.z;sy=(Math.random()*2-1)*fx.shake.i*720*V.z;}
@@ -272,7 +273,7 @@ function loop(now){
 
 /* ================= касания ================= */
 function boxOf(id){
-  if(isChar(id)){const p=P.stage[id];return{x:p[0],y:p[1],w:CH[id].s[0],h:CH[id].s[1]};}
+  if(isChar(id)){const p=P.stage[id];return{x:p[0],y:p[1],w:chS(id)[0],h:chS(id)[1]};}
   const o=objById(id);if(!o)return null;const s=ev(o),d=dim(o);let w=d.w*o.sx,h=d.h*o.sy,x=s.x,y=s.y;if(w<0){x+=w;w=-w;}if(h<0){y+=h;h=-h;}return{x,y,w,h};
 }
 function hitTest(p){const L=[];P.objects.forEach(o=>{if(!o.front&&!o.locked)L.push(o.id);});if(!P.stage.hideGF)L.push('gf');L.push('dad','bf');P.objects.forEach(o=>{if(o.front&&!o.locked)L.push(o.id);});
@@ -492,11 +493,12 @@ function actCard(e,a,i){
   if(a.type==='lua')f=`${a.name?`<div class="hint">★ ${esc(a.name)}</div>`:''}${selF(T,'target',a.target,objOpts(),'Объект для {obj} (необязательно)',1)}${paramRows(T,a.params,'actParamDel',`data-id="${e.id}" data-ai="${i}"`)}<div class="row"><button data-a="actParamAdd" data-id="${e.id}" data-ai="${i}">＋ параметр</button><button data-a="aclFromAct" data-id="${e.id}" data-ai="${i}">★ Сохранить как моё действие</button></div><label class="f"><span>Lua-код (внутри функции события; {obj} = объект, {параметры})</span><textarea ${LUATA} ${attr(T,'code')}>${esc(a.code)}</textarea></label>`;
   return`<div class="act"><div class="row"><b>${names[a.type]}</b><span class="sp"></span><button class="bad" data-a="delAct" data-id="${e.id}" data-i="${i}">✕</button></div>${num(T,'delay',a.delay,'Задержка, сек',.1)}${f}</div>`;
 }
-function tabStage(){const T='stage',S=P.stage;
+function tabStage(){const T='stage',S=P.stage;if(!S.cs)S.cs={};['bf','dad','gf'].forEach(k=>{if(!S.cs[k])S.cs[k]=chS(k).slice();});
   return`<div class="grp"><h3>Проект</h3>${txt('proj','name',P.name,'Имя стадии (имя файла)')}${txt('proj','mod',P.mod,'Папка мода')}${num('proj','bpm',P.bpm,'BPM для предпросмотра')}</div>
   <div class="grp"><h3>Камера и скорость</h3>${num(T,'speed',S.speed||1,'Скорость всех эффектов × (1 = обычная)',.1)}${num(T,'zoom',S.zoom,'defaultZoom',.05)}${num(T,'camSpeed',S.camSpeed,'camera_speed',.1)}${chk(T,'pixel',S.pixel,'Пиксельная стадия')}${chk(T,'hideGF',S.hideGF,'Скрыть GF')}</div>
   <div class="grp"><h3>Позиции персонажей</h3>
   <div class="two">${num(T,'bf.0',S.bf[0],'BF X')}${num(T,'bf.1',S.bf[1],'BF Y')}</div><div class="two">${num(T,'dad.0',S.dad[0],'Оппонент X')}${num(T,'dad.1',S.dad[1],'Оппонент Y')}</div><div class="two">${num(T,'gf.0',S.gf[0],'GF X')}${num(T,'gf.1',S.gf[1],'GF Y')}</div></div>
+  <div class="grp"><h3>Размер рамок персонажей</h3><div class="hint">Размер рамки на сцене: поставь реальный размер кадра персонажа, тогда рамка будет там же, где персонаж в игре.</div>${['bf','dad','gf'].map(k=>`<div class="two">${num(T,'cs.'+k+'.0',S.cs[k][0],CH[k].n+': ширина')}${num(T,'cs.'+k+'.1',S.cs[k][1],CH[k].n+': высота')}</div>`).join('')}</div>
   <div class="grp"><h3>Смещение камеры</h3>
   <div class="two">${num(T,'camBF.0',S.camBF[0],'BF X')}${num(T,'camBF.1',S.camBF[1],'BF Y')}</div><div class="two">${num(T,'camDad.0',S.camDad[0],'Оппонент X')}${num(T,'camDad.1',S.camDad[1],'Оппонент Y')}</div><div class="two">${num(T,'camGF.0',S.camGF[0],'GF X')}${num(T,'camGF.1',S.camGF[1],'GF Y')}</div></div>
   <div class="hint">Пунктирная рамка на сцене — примерный кадр камеры при этом zoom.</div>`;}
@@ -973,11 +975,16 @@ Object.assign(ACT,{
   cvFile(){$('#fCv').value='';$('#fCv').click();},
   cvImgs(){$('#fCvImg').value='';$('#fCvImg').click();},
   cvRun(){cvRun();},
-  cvRelink(){cvRelink();}
+  cvRelink(){cvRelink();},
+  cvRecalc(){if(!CV.raw)return toast('Сначала сконвертируй V-Slice');const S=P.stage,z=cvSizes().sizes;S.cs=S.cs||{};
+    ['bf','dad','gf'].forEach(k=>{if(!CV.raw[k])return;const sz=z[k],o=CV.off[k]||[0,0];S[k]=[R(CV.raw[k][0]-sz[0]/2-o[0],1),R(CV.raw[k][1]-sz[1]-o[1],1)];S.cs[k]=sz.slice();});
+    commit();invalidate();renderPanel();toast('Позиции персонажей пересчитаны');}
 });
 
 /* ================= конвертер локаций: V-Slice и Codename → Psych ================= */
-const CV={file:'',text:'',fmt:'',mode:'replace',sizes:{bf:[439,785],dad:[471,785],gf:[703,657]},report:[]};
+const CV={file:'',text:'',fmt:'',mode:'replace',sizes:{bf:[439,785],dad:[471,785],gf:[703,657]},off:{bf:[0,0],dad:[0,0],gf:[0,0]},chImg:{bf:'',dad:'',gf:''},scl:{bf:1,dad:1,gf:1},raw:null,report:[]};
+function cvIdleSize(img){const c=IMG[img];if(!c||!c.list.length)return null;const f=c.list.find(f=>/idle|dance/i.test(f.n))||c.list[0];return[Math.round(f.fw),Math.round(f.fh)];}
+function cvSizes(){const r={},notes=[];['bf','dad','gf'].forEach(k=>{let z=CV.chImg[k]?cvIdleSize(CV.chImg[k]):null;const sc=+CV.scl[k]>0?+CV.scl[k]:1;if(z)z=[Math.round(z[0]*sc),Math.round(z[1]*sc)];r[k]=z||CV.sizes[k];if(z)notes.push(CH[k].n+': размер кадра '+z[0]+'×'+z[1]+' (атлас '+CV.chImg[k]+(sc!==1?', scale '+sc:'')+')');});return{sizes:r,notes};}
 const hex6=c=>String(c||'FFFFFF').replace(/^#|^0x/i,'').toUpperCase().padStart(6,'0').slice(-6);
 const baseOf=a=>{const s=String(a||'').replace(/\\/g,'/').split('/').pop();return s.replace(/\.(png|jpe?g|webp|gif)$/i,'');};
 function findImage(base){const b=cleanName(String(base||'')).toLowerCase();return Object.keys(P.images).find(k=>noExt(k).toLowerCase()===b)||'';}
@@ -1005,9 +1012,9 @@ function parseVSlice(j,notes,sizes){
   });
   const chars={},base={bf:[-100,-100],dad:[150,-100],gf:[0,0]};
   ['bf','dad','gf'].forEach(k=>{const c=ch[k];if(!c)return;const pos=Array.isArray(c.position)?c.position:[0,0],sz=sizes[k]||[400,600],co=Array.isArray(c.cameraOffsets)?c.cameraOffsets:[0,0];
-    chars[k]={x:num(pos[0],0)-sz[0]/2,y:num(pos[1],0)-sz[1],cx:num(co[0],0)-base[k][0],cy:num(co[1],0)-base[k][1]};
+    chars[k]={fx:num(pos[0],0),fy:num(pos[1],0),x:num(pos[0],0)-sz[0]/2-(CV.off[k]?CV.off[k][0]:0),y:num(pos[1],0)-sz[1]-(CV.off[k]?CV.off[k][1]:0),cx:num(co[0],0)-base[k][0],cy:num(co[1],0)-base[k][1]};
     if(c.scale!=null&&c.scale!==1)notes.push('У персонажа '+k+' масштаб '+c.scale+': в Psych он задаётся в json самого персонажа, здесь не перенесён');});
-  notes.push('Позиции персонажей пересчитаны из позиции «по ногам» в левый верхний угол по размеру кадра (см. поля ниже): проверь и подвинь пальцем на сцене');
+  notes.push('Позиции персонажей: x = pos.x − ширина/2 − offset.x, y = pos.y − высота − offset.y (V-Slice ставит «по ногам»). Для точности укажи атлас персонажа и «position» из его json в полях импорта');
   notes.push('Смещения камеры пересчитаны относительно стандартных у Psych (bf −100,−100; оппонент +150,−100): значения приблизительные');
   if(noScroll)notes.push('У '+noScroll+' объектов не указан scroll: по документации V-Slice это 0,0 (не двигаются с камерой)');
   if(between)notes.push(between+' объектов лежат по слоям между персонажами: в Psych они оказались позади всех персонажей');
@@ -1087,7 +1094,7 @@ function cvRun(){
   if(!CV.text)return toast('Сначала выбери файл локации');
   const notes=[],missing=new Set();let norm;
   try{
-    if(CV.fmt==='vslice')norm=parseVSlice(JSON.parse(CV.text.replace(/^\uFEFF/,'')),notes,CV.sizes);
+    if(CV.fmt==='vslice'){const z=cvSizes();z.notes.forEach(n=>notes.push(n));norm=parseVSlice(JSON.parse(CV.text.replace(/^\uFEFF/,'')),notes,z.sizes);}
     else if(CV.fmt==='codename')norm=parseCodename(CV.text,notes);
     else return toast('Формат не распознан');
   }catch(e){return toast('Ошибка разбора: '+e.message);}
@@ -1099,7 +1106,8 @@ function cvRun(){
     P.objects=r.objs;P.events=r.evs;P.lua=[];
     const S=P.stage;S.zoom=norm.zoom||1;S.hideGF=!norm.chars.gf;
     const cm={bf:'camBF',dad:'camDad',gf:'camGF'};
-    ['bf','dad','gf'].forEach(k=>{const c=norm.chars[k];if(!c)return;S[k]=[R(c.x,1),R(c.y,1)];S[cm[k]]=[R(c.cx,1),R(c.cy,1)];});
+    ['bf','dad','gf'].forEach(k=>{const c=norm.chars[k];if(!c)return;S[k]=[R(c.x,1),R(c.y,1)];S[cm[k]]=[R(c.cx,1),R(c.cy,1)];if(norm.fmt==='vslice'){S.cs=S.cs||{};S.cs[k]=cvSizes().sizes[k].slice();}});
+    CV.raw=norm.fmt==='vslice'?Object.fromEntries(Object.entries(norm.chars).map(([k,c])=>[k,[c.fx,c.fy]])):null;
     if(norm.name)P.name=slug(norm.name);
   }
   SEL=null;commit();resetSim();fit();
@@ -1128,8 +1136,8 @@ function tabImport(){
   <div class="row"><button class="pri" data-a="cvFile">📂 Файл локации</button><button data-a="cvImgs">🖼 Картинки и атласы</button></div>`;
   h+=CV.file?`<div class="hint">Файл: <b>${esc(CV.file)}</b> · формат: <b>${CV.fmt?fn[CV.fmt]:'не распознан'}</b> · картинок в проекте: ${Object.keys(P.images).length}</div>`:`<div class="hint">Файл не выбран.</div>`;
   h+=selF(T,'mode',CV.mode,[['replace','заменить текущую сцену'],['append','добавить к текущей сцене']],'Как применить');
-  if(CV.fmt==='vslice')h+=`<div class="hint">V-Slice ставит персонажей по «ногам», Psych по левому верхнему углу. Для пересчёта нужен размер кадра персонажа (по умолчанию как у стандартной сцены).</div>`+['bf','dad','gf'].map(k=>`<div class="two">${num(T,'sizes.'+k+'.0',CV.sizes[k][0],CH[k].n+': ширина кадра')}${num(T,'sizes.'+k+'.1',CV.sizes[k][1],CH[k].n+': высота кадра')}</div>`).join('');
-  h+=`<div class="row"><button class="pri" data-a="cvRun" ${CV.fmt==='vslice'||CV.fmt==='codename'?'':'disabled'}>Конвертировать</button><button data-a="cvRelink">🔗 Привязать картинки</button></div></div>`;
+  if(CV.fmt==='vslice')h+=`<div class="hint">V-Slice ставит персонажей по «ногам», Psych по левому верхнему углу. Для пересчёта нужен размер кадра персонажа (по умолчанию как у стандартной сцены).</div>`+['bf','dad','gf'].map(k=>{const z=CV.chImg[k]?cvIdleSize(CV.chImg[k]):null;return`<div class="grp"><b>${CH[k].n}</b>${selF(T,'chImg.'+k,CV.chImg[k],[['','— размер вручную —'],...Object.keys(P.images)],'Атлас персонажа (idle) для точного размера',1)}${z?`<div class="hint">Размер кадра из атласа: ${z[0]}×${z[1]}</div>`:`<div class="two">${num(T,'sizes.'+k+'.0',CV.sizes[k][0],'ширина кадра')}${num(T,'sizes.'+k+'.1',CV.sizes[k][1],'высота кадра')}</div>`}${z?num(T,'scl.'+k,CV.scl[k],'scale персонажа (из его json)',.05):''}<div class="two">${num(T,'off.'+k+'.0',CV.off[k][0],'position X из json персонажа')}${num(T,'off.'+k+'.1',CV.off[k][1],'position Y из json персонажа')}</div></div>`;}).join('');
+  h+=`<div class="row"><button class="pri" data-a="cvRun" ${CV.fmt==='vslice'||CV.fmt==='codename'?'':'disabled'}>Конвертировать</button><button data-a="cvRelink">🔗 Привязать картинки</button></div>${CV.fmt==='vslice'?`<div class="row"><button data-a="cvRecalc" ${CV.raw?'':'disabled'}>🔁 Пересчитать позиции (после смены размеров)</button></div>`:''}</div>`;
   if(CV.report&&CV.report.length)h+=`<div class="grp"><h3>Отчёт</h3>${CV.report.map(x=>`<div class="${x[0]==='⚠'?'warn':'hint'}">${esc(x)}</div>`).join('')}</div>`;
   return h;
 }
