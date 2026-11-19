@@ -976,6 +976,9 @@ Object.assign(ACT,{
   cvImgs(){$('#fCvImg').value='';$('#fCvImg').click();},
   cvRun(){cvRun();},
   cvRelink(){cvRelink();},
+  cvAuto(){cvAutoImages().catch(e=>toast('Ошибка: '+(e&&e.message||e)));},
+  cvStages(){cvListStages();},
+  cvPick(d){cvPickStage(d.p);},
   cvRecalc(){if(!CV.raw)return toast('Сначала сконвертируй V-Slice');const S=P.stage,z=cvSizes().sizes;S.cs=S.cs||{};
     ['bf','dad','gf'].forEach(k=>{if(!CV.raw[k])return;const sz=z[k],o=CV.off[k]||[0,0];S[k]=[R(CV.raw[k][0]-sz[0]/2-o[0],1),R(CV.raw[k][1]-sz[1]-o[1],1)];S.cs[k]=sz.slice();});
     commit();invalidate();renderPanel();toast('Позиции персонажей пересчитаны');}
@@ -986,7 +989,8 @@ const CV={file:'',text:'',fmt:'',mode:'replace',sizes:{bf:[439,785],dad:[471,785
 function cvIdleSize(img){const c=IMG[img];if(!c||!c.list.length)return null;const f=c.list.find(f=>/idle|dance/i.test(f.n))||c.list[0];return[Math.round(f.fw),Math.round(f.fh)];}
 function cvSizes(){const r={},notes=[];['bf','dad','gf'].forEach(k=>{let z=CV.chImg[k]?cvIdleSize(CV.chImg[k]):null;const sc=+CV.scl[k]>0?+CV.scl[k]:1;if(z)z=[Math.round(z[0]*sc),Math.round(z[1]*sc)];r[k]=z||CV.sizes[k];if(z)notes.push(CH[k].n+': размер кадра '+z[0]+'×'+z[1]+' (атлас '+CV.chImg[k]+(sc!==1?', scale '+sc:'')+')');});return{sizes:r,notes};}
 const hex6=c=>String(c||'FFFFFF').replace(/^#|^0x/i,'').toUpperCase().padStart(6,'0').slice(-6);
-const baseOf=a=>{const s=String(a||'').replace(/\\/g,'/').split('/').pop();return s.replace(/\.(png|jpe?g|webp|gif)$/i,'');};
+const relOf=a=>String(a||'').replace(/\\/g,'/').replace(/^[A-Za-z0-9_\-]+:/,'').replace(/^\/+/,'').replace(/\.(png|jpe?g|webp|gif)$/i,'');
+const baseOf=a=>relOf(a).split('/').pop();
 function findImage(base){const b=cleanName(String(base||'')).toLowerCase();return Object.keys(P.images).find(k=>noExt(k).toLowerCase()===b)||'';}
 function cvDetect(text){
   const t=String(text||'').replace(/^\uFEFF/,'').trim();
@@ -1003,7 +1007,7 @@ function parseVSlice(j,notes,sizes){
     const sc=Array.isArray(p.scale)?[num(p.scale[0],1),num(p.scale[1],1)]:[num(p.scale,1),num(p.scale,1)];
     let scr=[0,0];if(Array.isArray(p.scroll))scr=[num(p.scroll[0],0),num(p.scroll[1],0)];else noScroll++;
     if(z>minZ&&z<=maxZ)between++;
-    const it={solid,name:String(p.name||('prop'+items.length)),asset,base:baseOf(asset),color:solid?hex6(asset):'FFFFFF',x:num(pos[0],0),y:num(pos[1],0),sx:sc[0],sy:sc[1],scrollX:scr[0],scrollY:scr[1],
+    const it={solid,name:String(p.name||('prop'+items.length)),asset,base:baseOf(asset),rel:relOf(asset),color:solid?hex6(asset):'FFFFFF',x:num(pos[0],0),y:num(pos[1],0),sx:sc[0],sy:sc[1],scrollX:scr[0],scrollY:scr[1],
       alpha:num(p.alpha,1),angle:num(p.angle,0),flipX:!!p.flipX,aa:!p.isPixel,blend:p.blend,front:z>maxZ,anims:[],start:p.startingAnimation||'',dance:num(p.danceEvery,0),animType:p.animType||'sparrow'};
     if(it.animType==='packer')packer++;if(it.animType==='multisparrow')multi++;
     (p.animations||[]).forEach(a=>{const off=Array.isArray(a.offsets)?a.offsets:[0,0],idx=Array.isArray(a.frameIndices)?a.frameIndices.join(','):'';if(idx)indices++;
@@ -1043,7 +1047,7 @@ function parseCodename(txt,notes){
     if(t==='solid'||t==='box'){items.push({solid:true,name:S(m,'name','box'+i),color:hex6(S(m,'color','#FFFFFF')),x:F(m,'x',0),y:F(m,'y',0),sx:F(m,'width',100),sy:F(m,'height',100),scrollX:1,scrollY:1,alpha:1,angle:0,aa:true,front:i>last,anims:[]});if(i<last&&i>0)cnt.between+=0;return;}
     if(t==='sprite'||t==='spr'||t==='sparrow'){
       const sp=String(S(m,'sprite','')).replace(/\\/g,'/'),sc=F(m,'scale',1),sr=F(m,'scroll',1);
-      const it={solid:false,name:S(m,'name',baseOf(sp)||('sprite'+i)),asset:folder+sp,base:baseOf(sp),x:F(m,'x',0),y:F(m,'y',0),sx:F(m,'scalex',sc),sy:F(m,'scaley',sc),scrollX:F(m,'scrollx',sr),scrollY:F(m,'scrolly',sr),
+      const it={solid:false,name:S(m,'name',baseOf(sp)||('sprite'+i)),asset:folder+sp,base:baseOf(sp),rel:relOf(folder+sp),x:F(m,'x',0),y:F(m,'y',0),sx:F(m,'scalex',sc),sy:F(m,'scaley',sc),scrollX:F(m,'scrollx',sr),scrollY:F(m,'scrolly',sr),
         alpha:F(m,'alpha',1),angle:0,flipX:false,aa:B(m,'antialiasing',true),front:i>last,anims:[],autoAnim:false,dance:0,danceAnim:''};
       if(F(m,'zoomfactor',1)!==1)cnt.zf++;if(m.skewx||m.skewy)cnt.skew++;if(m.graphicsize||m.graphicsizex||m.graphicsizey)cnt.gsz++;
       if(m.color&&hex6(m.color)!=='FFFFFF')cnt.tint++;
@@ -1073,7 +1077,7 @@ function cvBuild(norm,append,notes,missing){
     const o=newObj({tag:uniq(it.name),type:it.solid?'rect':'image',x:R(it.x,2),y:R(it.y,2),sx:it.solid?1:it.sx,sy:it.solid?1:it.sy,scrollX:it.scrollX,scrollY:it.scrollY,alpha:it.alpha,angle:it.angle,flipX:!!it.flipX,aa:it.aa!==false,front:!!it.front,blend:BL[String(it.blend||'').toLowerCase()]||'normal'});
     if(it.solid){o.color=it.color;o.w=Math.max(1,Math.round(it.sx));o.h=Math.max(1,Math.round(it.sy));}
     else{
-      o.srcAsset=it.base;const k=findImage(it.base);if(k){o.image=k;matched++;}else if(it.base)missing.add(it.base);
+      o.srcAsset=it.base;o.srcRel=it.rel||it.base;const k=findImage(it.base);if(k){o.image=k;matched++;}else if(it.base)missing.add(it.base);
       const ci=o.image&&IMG[o.image];
       if(it.anims.length&&it.animType!=='packer'){o.animated=true;o.anims=it.anims.map(a=>Object.assign({ox:0,oy:0,idx:''},a));if(it.start&&o.anims.some(a=>a.name===it.start))o.defAnim=it.start;}
       else if(it.autoAnim&&ci&&ci.prefixes.length){o.animated=true;o.anims=ci.prefixes.slice(0,40).map(mkAnim);}
@@ -1090,7 +1094,10 @@ function cvBuild(norm,append,notes,missing){
   });
   return{objs,evs,matched};
 }
-function cvRun(){
+async function cvRun(){
+  try{await cvRun0();}catch(e){CV.report=['❌ Ошибка конвертации: '+(e&&e.message||e)];renderPanel();toast('Ошибка: '+(e&&e.message||e));}
+}
+async function cvRun0(){
   if(!CV.text)return toast('Сначала выбери файл локации');
   const notes=[],missing=new Set();let norm;
   try{
@@ -1099,7 +1106,6 @@ function cvRun(){
     else return toast('Формат не распознан');
   }catch(e){return toast('Ошибка разбора: '+e.message);}
   const append=CV.mode==='append';
-  if(!append&&(P.objects.length||P.events.length)&&!confirm('Заменить текущую сцену результатом конвертации?'))return;
   const r=cvBuild(norm,append,notes,missing);
   if(append){r.objs.forEach(o=>P.objects.push(o));r.evs.forEach(e=>P.events.push(e));}
   else{
@@ -1114,7 +1120,9 @@ function cvRun(){
   const rep=['Готово: '+r.objs.length+' объектов, '+r.evs.length+' событий анимации ('+({vslice:'V-Slice',codename:'Codename'}[norm.fmt])+' → Psych 0.7.3). Картинок привязано: '+r.matched+'.'];
   if(missing.size)rep.push('⚠ Нет картинок: '+[...missing].join(', ')+'. Добавь их кнопкой «Картинки и атласы» (PNG + XML), они привяжутся сами.');
   notes.forEach(n=>rep.push('⚠ '+n));
-  CV.report=rep;renderPanel();toast('Конвертация завершена');
+  const S2=P.stage;if(norm.chars){rep.push('Персонажи (bf / dad / gf), позиции в Psych: '+['bf','dad','gf'].map(k=>norm.chars[k]?k+' '+Math.round(S2[k][0])+','+Math.round(S2[k][1]):k+' нет в файле').join(' · '));}
+  CV.report=rep;renderPanel();toast('Конвертация завершена: объектов '+r.objs.length);
+  if(missing.size){try{await cvAutoImages();}catch(e){CV.report.push('⚠ Автозагрузка картинок: '+(e&&e.message||e));renderPanel();}}
 }
 async function loadAssets(files){
   const list=[...files],xmls=list.filter(f=>/\.xml$/i.test(f.name)),imgs=list.filter(f=>/\.(png|jpe?g|webp|gif)$/i.test(f.name));let n=0;
@@ -1123,6 +1131,49 @@ async function loadAssets(files){
   for(const x of xmls){const b=noExt(cleanName(x.name)),k=Object.keys(P.images).find(i=>noExt(i)===b);
     if(k&&!imgs.some(f=>noExt(cleanName(f.name))===b)){P.images[k].xml=await readFile(x,'text');await prepImage(k);}}
   return n;
+}
+const modBase=()=>TARGET?(TARGET.kind==='mods'?slug(P.mod)+'/':''):'';
+const b64Text=b=>{const bin=atob(b),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new TextDecoder().decode(u);};
+const mimeOf=f=>/\.jpe?g$/i.test(f)?'image/jpeg':/\.webp$/i.test(f)?'image/webp':'image/png';
+async function cvAutoImages(){
+  const fp=isNative()?plug('FolderPicker'):null;
+  if(!fp||!TARGET){CV.report=(CV.report||[]).concat(['ℹ Чтобы картинки подгружались сами, выбери папку мода (кнопка выше) и нажми «Подгрузить картинки из папки мода».']);renderPanel();return 0;}
+  const base=modBase(),all=(await fp.listFiles({tree:TARGET.tree,path:base+'images',depth:8})).files||[];
+  const imgs=all.filter(f=>/\.(png|jpe?g|webp)$/i.test(f)),low=imgs.map(f=>f.toLowerCase()),set=new Set(all.map(f=>f.toLowerCase()));
+  const want=P.objects.filter(o=>o.type==='image'&&!o.image&&o.srcAsset);let n=0;const nf=new Set(),done={};
+  for(const o of want){
+    const rel=String(o.srcRel||o.srcAsset).toLowerCase(),b=String(o.srcAsset).toLowerCase();
+    let i=low.findIndex(f=>/\.(png|jpe?g|webp)$/.test(f)&&f.replace(/\.[^.]+$/,'')===(base+'images/'+rel).toLowerCase());
+    if(i<0)i=low.findIndex(f=>f.replace(/\.[^.]+$/,'').endsWith('/'+rel));
+    if(i<0)i=low.findIndex(f=>f.replace(/\.[^.]+$/,'').split('/').pop()===b);
+    if(i<0){nf.add(o.srcRel||o.srcAsset);continue;}
+    const path=imgs[i];
+    if(!done[path]){
+      let name=cleanName(path.split('/').pop()),k=2;while(P.images[name]&&P.images[name].src&&P.images[name].src!==path)name=noExt(cleanName(path.split('/').pop()))+'_'+(k++)+'.'+path.split('.').pop();
+      const r=await fp.readFile({tree:TARGET.tree,path});
+      const xp=path.replace(/\.[^.]+$/,'.xml'),hasX=set.has(xp.toLowerCase());let xml=null;
+      if(hasX){const xr=all.find(f=>f.toLowerCase()===xp.toLowerCase());try{xml=b64Text((await fp.readFile({tree:TARGET.tree,path:xr})).data);}catch(e){}}
+      P.images[name]={data:'data:'+mimeOf(path)+';base64,'+r.data,w:0,h:0,xml,src:path};await prepImage(name);done[path]=name;
+    }
+    o.image=done[path];n++;
+    const ci=IMG[o.image];if(o.autoAnim&&ci&&ci.prefixes.length&&!o.anims.length){o.animated=true;o.anims=ci.prefixes.slice(0,40).map(mkAnim);delete o.autoAnim;}
+  }
+  commit();invalidate();
+  CV.report=(CV.report||[]).filter(x=>!/^⚠ Нет картинок|^ℹ Чтобы картинки/.test(x)).concat(['✅ Подгружено картинок из папки мода: '+n+' (файлов в images/: '+imgs.length+')']);
+  if(nf.size)CV.report.push('⚠ В папке images/ не найдены: '+[...nf].join(', '));
+  renderPanel();toast('Картинок из папки: '+n);return n;
+}
+async function cvListStages(){
+  const fp=isNative()?plug('FolderPicker'):null;if(!fp||!TARGET)return toast('Сначала выбери папку мода');
+  const base=modBase();let out=[];
+  for(const d of ['stages','data/stages','data']){try{const r=await fp.listFiles({tree:TARGET.tree,path:base+d,depth:d==='data'?1:3});out=out.concat((r.files||[]).filter(f=>/\.(json|xml)$/i.test(f)));}catch(e){}}
+  CV.stageList=[...new Set(out)];renderPanel();toast(CV.stageList.length?'Локаций найдено: '+CV.stageList.length:'В папке мода нет локаций (stages/, data/stages/)');
+}
+async function cvPickStage(path){
+  const fp=plug('FolderPicker');try{const r=await fp.readFile({tree:TARGET.tree,path});CV.file=path.split('/').pop();CV.text=b64Text(r.data);CV.fmt=cvDetect(CV.text);CV.report=[];
+    if(!CV.fmt){renderPanel();return toast('Формат не распознан (нужен V-Slice .json или Codename .xml)');}
+    if(CV.fmt==='psych'){renderPanel();return toast('Это уже Psych-локация, конвертация не нужна');}
+    await cvRun();}catch(e){toast('Не удалось прочитать: '+(e&&e.message||e));}
 }
 function cvRelink(){
   let n=0;
@@ -1135,6 +1186,14 @@ function tabImport(){
   let h=`<div class="grp"><h3>🔄 Конвертер локаций → Psych Engine</h3><div class="hint">Поддерживается: V-Slice (stage .json) и Codename Engine (stage .xml). Картинки и XML-атласы можно добавить до или после конвертации: они привязываются по имени файла.</div>
   <div class="row"><button class="pri" data-a="cvFile">📂 Файл локации</button><button data-a="cvImgs">🖼 Картинки и атласы</button></div>`;
   h+=CV.file?`<div class="hint">Файл: <b>${esc(CV.file)}</b> · формат: <b>${CV.fmt?fn[CV.fmt]:'не распознан'}</b> · картинок в проекте: ${Object.keys(P.images).length}</div>`:`<div class="hint">Файл не выбран.</div>`;
+  h+=`<div class="grp"><h3>📁 Папка мода</h3>`;
+  if(!isNative())h+=`<div class="hint">Автозагрузка из папки мода работает только в установленном приложении (APK).</div>`;
+  else if(!TARGET)h+=`<div class="hint">Выбери папку мода или mods: из неё можно взять локацию и сразу подгрузить все PNG из images/.</div><div class="row"><button class="pri" data-a="pickFolder">📂 Выбрать папку</button></div>`;
+  else{h+=`<div class="hint">Папка: <b>${esc(TARGET.name)}</b>${TARGET.kind==='mods'?' · мод: <b>'+esc(slug(P.mod))+'</b>':''}</div>`;
+    if(TARGET.kind==='mods')h+=`<label class="f"><span>Мод из списка</span><select data-modsel="1"><option value="">— выбрать —</option>${(TARGET.dirs||[]).map(d=>`<option value="${esc(d)}" ${d===P.mod?'selected':''}>${esc(d)}</option>`).join('')}</select></label>`;
+    h+=`<div class="row"><button class="pri" data-a="cvStages">🔎 Локации из папки мода</button><button data-a="cvAuto">🖼 Подгрузить картинки из папки мода</button></div>`;
+    if(CV.stageList)h+=CV.stageList.length?CV.stageList.map(f=>`<div class="item"><span style="word-break:break-all">${esc(f)}</span><span class="sp"></span><button class="pri" data-a="cvPick" data-p="${esc(f)}">Открыть</button></div>`).join(''):`<div class="hint">Файлов локаций не найдено.</div>`;}
+  h+=`</div>`;
   h+=selF(T,'mode',CV.mode,[['replace','заменить текущую сцену'],['append','добавить к текущей сцене']],'Как применить');
   if(CV.fmt==='vslice')h+=`<div class="hint">V-Slice ставит персонажей по «ногам», Psych по левому верхнему углу. Для пересчёта нужен размер кадра персонажа (по умолчанию как у стандартной сцены).</div>`+['bf','dad','gf'].map(k=>{const z=CV.chImg[k]?cvIdleSize(CV.chImg[k]):null;return`<div class="grp"><b>${CH[k].n}</b>${selF(T,'chImg.'+k,CV.chImg[k],[['','— размер вручную —'],...Object.keys(P.images)],'Атлас персонажа (idle) для точного размера',1)}${z?`<div class="hint">Размер кадра из атласа: ${z[0]}×${z[1]}</div>`:`<div class="two">${num(T,'sizes.'+k+'.0',CV.sizes[k][0],'ширина кадра')}${num(T,'sizes.'+k+'.1',CV.sizes[k][1],'высота кадра')}</div>`}${z?num(T,'scl.'+k,CV.scl[k],'scale персонажа (из его json)',.05):''}<div class="two">${num(T,'off.'+k+'.0',CV.off[k][0],'position X из json персонажа')}${num(T,'off.'+k+'.1',CV.off[k][1],'position Y из json персонажа')}</div></div>`;}).join('');
   h+=`<div class="row"><button class="pri" data-a="cvRun" ${CV.fmt==='vslice'||CV.fmt==='codename'?'':'disabled'}>Конвертировать</button><button data-a="cvRelink">🔗 Привязать картинки</button></div>${CV.fmt==='vslice'?`<div class="row"><button data-a="cvRecalc" ${CV.raw?'':'disabled'}>🔁 Пересчитать позиции (после смены размеров)</button></div>`:''}</div>`;

@@ -20,6 +20,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,7 +30,7 @@ import java.util.Locale;
 
 /**
  * Выбор папки через системный диалог (SAF) и запись в неё файлов.
- * Методы: pick(), check({tree}), listDirs({tree}), writeFile({tree, path, data(base64)}).
+ * Методы: pick, check, listDirs, writeFile, listFiles({tree,path}), readFile({tree,path}).
  */
 @CapacitorPlugin(name = "FolderPicker")
 public class FolderPickerPlugin extends Plugin {
@@ -142,6 +144,146 @@ public class FolderPickerPlugin extends Plugin {
             call.resolve();
         } catch (Exception e) {
             call.reject("write failed: " + path + " (" + e.getMessage() + ")");
+        }
+    }
+
+
+    /** Список файлов (рекурсивно) в папке path относительно выбранной папки. Возвращает files: ["images/a/b.png", ...] */
+    @PluginMethod
+    public void listFiles(PluginCall call) {
+        String tree = call.getString("tree");
+        String path = call.getString("path", "");
+        Integer depthObj = call.getInt("depth", 6);
+        int depth = depthObj == null ? 6 : depthObj;
+        if (tree == null) {
+            call.reject("tree is required");
+            return;
+        }
+        try {
+            Uri t = Uri.parse(tree);
+            Uri cur = DocumentsContract.buildDocumentUriUsingTree(t, DocumentsContract.getTreeDocumentId(t));
+            StringBuilder prefix = new StringBuilder();
+            for (String p : path.split("/")) {
+                if (p.isEmpty() || p.equals(".") || p.equals("..")) {
+                    continue;
+                }
+                cur = findChild(t, cur, p);
+                if (cur == null) {
+                    break;
+                }
+                prefix.append(p).append("/");
+            }
+            List<String> out = new ArrayList<>();
+            if (cur != null) {
+                walk(t, cur, prefix.toString(), depth, out);
+            }
+            JSArray arr = new JSArray();
+            for (String n : out) {
+                arr.put(n);
+            }
+            JSObject ret = new JSObject();
+            ret.put("files", arr);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("list failed: " + e.getMessage());
+        }
+    }
+
+    private void walk(Uri tree, Uri dir, String prefix, int depth, List<String> out) {
+        if (out.size() > 6000) {
+            return;
+        }
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(dir));
+        Cursor c = null;
+        List<String[]> subs = new ArrayList<>();
+        try {
+            c = getContext().getContentResolver().query(
+                children,
+                new String[] {
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                },
+                null,
+                null,
+                null
+            );
+            while (c != null && c.moveToNext()) {
+                String id = c.getString(0);
+                String name = c.getString(1);
+                if (name == null) {
+                    continue;
+                }
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(c.getString(2))) {
+                    subs.add(new String[] { id, name });
+                } else {
+                    out.add(prefix + name);
+                }
+            }
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        if (depth > 0) {
+            for (String[] sd : subs) {
+                walk(tree, DocumentsContract.buildDocumentUriUsingTree(tree, sd[0]), prefix + sd[1] + "/", depth - 1, out);
+            }
+        }
+    }
+
+    /** Читает файл по относительному пути, возвращает data (base64). */
+    @PluginMethod
+    public void readFile(PluginCall call) {
+        String tree = call.getString("tree");
+        String path = call.getString("path");
+        if (tree == null || path == null) {
+            call.reject("tree and path are required");
+            return;
+        }
+        InputStream is = null;
+        try {
+            Uri t = Uri.parse(tree);
+            Uri cur = DocumentsContract.buildDocumentUriUsingTree(t, DocumentsContract.getTreeDocumentId(t));
+            for (String p : path.split("/")) {
+                if (p.isEmpty() || p.equals(".") || p.equals("..")) {
+                    continue;
+                }
+                cur = findChild(t, cur, p);
+                if (cur == null) {
+                    call.reject("not found: " + path);
+                    return;
+                }
+            }
+            is = getContext().getContentResolver().openInputStream(cur);
+            if (is == null) {
+                call.reject("cannot open " + path);
+                return;
+            }
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[65536];
+            int n;
+            long total = 0;
+            while ((n = is.read(buf)) > 0) {
+                total += n;
+                if (total > 60L * 1024 * 1024) {
+                    call.reject("file too large: " + path);
+                    return;
+                }
+                bos.write(buf, 0, n);
+            }
+            JSObject ret = new JSObject();
+            ret.put("data", Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("read failed: " + path + " (" + e.getMessage() + ")");
+        } finally {
+            if (is != null) {
+                try {
+                    is.close();
+                } catch (Exception ignored) {
+                }
+            }
         }
     }
 
